@@ -1,0 +1,19 @@
+{
+  "name": "trambot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "author": "Ben Elsen <mail@benelsen.com> (https://benelsen.com/)",
+  "license": "ISC",
+  "dependencies": {
+    "babel": "^5.5.4",
+    "bluebird": "^2.9.27",
+    "qs": "^3.1.0",
+    "readline-sync": "^1.2.17",
+    "request": "^2.57.0",
+    "twitter": "^1.2.5"
+  },
+  "scripts": {
+    "start": "babel-node --optional es7.asyncFunctions index.js"
+  }
+}
