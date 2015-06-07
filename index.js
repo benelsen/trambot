@@ -2,8 +2,6 @@
 import fs from 'fs';
 import util from 'util';
 
-import qs from 'qs';
-import request from 'request';
 import Bluebird from 'bluebird';
 import readline from 'readline-sync';
 
