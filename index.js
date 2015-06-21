@@ -2,6 +2,8 @@
 import fs from 'fs';
 import util from 'util';
 
+import uniq from 'lodash.uniq';
+
 import Bluebird from 'bluebird';
 import readline from 'readline-sync';
 
@@ -12,6 +14,8 @@ Bluebird.promisifyAll(fs);
 let blacklist, whitelist, adminlist, user, userStream, trackStream;
 
 let active = true;
+
+const replyTimes = new Map();
 
 (async function main () {
 
@@ -362,8 +366,20 @@ async function reply (client, tweet) {
     return false;
   }
 
+  if ( replyTimes.get(tweet.user.id_str) < (new Date() - 6*3600e3) ) {
+    console.info('Can’t annoy a user more than once every 6 hours');
+    return false;
+  }
+
+  replyTimes.set(tweet.user.id_str, new Date());
+
+  const mentions = uniq([
+    tweet.user.screen_name,
+    ...tweet.entities.user_mentions.map(u => u.screen_name)
+  ]).map(u => '@' + u).join(' ');
+
   const [result] = await client.postAsync('statuses/update', {
-    status: `@${tweet.user.screen_name} A WEEN SOLL DAT BEZUELEN?!?!`,
+    status: `@${mentions} A WEEN SOLL DAT BEZUELEN?!?!`,
     in_reply_to_status_id: tweet.id_str
   });
 
