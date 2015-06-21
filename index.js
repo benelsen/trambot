@@ -17,6 +17,7 @@ let active = true;
 
 const replyTimes = new Map();
 
+
 (async function main () {
 
   const config = await loadConfig();
@@ -31,6 +32,16 @@ const replyTimes = new Map();
   startTrackStream(client);
 
 })();
+
+process.on('uncaughtExceptions', function(e) {
+  console.error('uncaughtExceptions', e.stack);
+});
+
+process.on('unhandledRejection', function(e, promise) {
+  console.error('unhandledRejection', e.stack, promise);
+});
+
+
 
 async function getLists (client) {
 
@@ -90,23 +101,15 @@ async function loadConfig() {
   return config;
 }
 
-process.on('uncaughtExceptions', function(e) {
-  console.error('uncaughtExceptions', e.stack);
-});
-
-process.on('unhandledRejection', function(e, promise) {
-  console.error('unhandledRejection', e.stack, promise);
-});
-
 function startUserStream (client) {
 
-  console.info('Starting user stream…');
+  console.info('User Stream:', 'starting');
 
   client.stream('user', {
     stringify_friend_ids: true
   }, function (stream) {
 
-    console.info('Started user stream…');
+    console.info('User Stream:', 'started');
 
     userStream = stream;
 
@@ -119,11 +122,15 @@ function startUserStream (client) {
     });
 
     stream.on('error', function (error) {
-      console.error('User Stream', util.inspect(error, {depth: null, colors: true}));
+      console.error('User Stream', 'error', error.stack);
     });
 
     stream.on('end', function() {
-      console.info('User Stream', 'User stream ended');
+      console.info('User Stream:', 'ended');
+
+      setTimeout(function() {
+        startUserStream(client);
+      }, 30e3);
     });
 
   });
@@ -131,7 +138,7 @@ function startUserStream (client) {
 
 function startTrackStream (client) {
 
-  console.info('Starting track stream…');
+  console.info('Track Stream:', 'starting');
 
   client.stream('statuses/filter', {
     stringify_friend_ids: true,
@@ -139,7 +146,7 @@ function startTrackStream (client) {
     follow: whitelist.members.join(',')
   }, function (stream) {
 
-    console.info('Started track stream…');
+    console.info('Track Stream:', 'started');
 
     trackStream = stream;
 
@@ -170,11 +177,15 @@ function startTrackStream (client) {
     });
 
     stream.on('error', function (error) {
-      console.error('Track Stream', util.inspect(error, {depth: null, colors: true}));
+      console.error('Track Stream', 'error', error.stack);
     });
 
     stream.on('end', function() {
-      console.info('Track Stream', 'Track stream ended');
+      console.info('Track Stream:', 'ended');
+
+      setTimeout(function() {
+        startTrackStream(client);
+      }, 30e3);
     });
 
   });
@@ -305,9 +316,6 @@ async function addRemoveToList (client, list, args, user, sub) {
 
   if ( trackStream ) {
     trackStream.destroy();
-    setTimeout(function() {
-      startTrackStream(client);
-    }, 30000);
   }
 
   if ( result && user ) {
@@ -379,7 +387,7 @@ async function reply (client, tweet) {
   ]).map(u => '@' + u).join(' ');
 
   const [result] = await client.postAsync('statuses/update', {
-    status: `@${mentions} A WEEN SOLL DAT BEZUELEN?!?!`,
+    status: `${mentions} A WEEN SOLL DAT BEZUELEN?!?!`,
     in_reply_to_status_id: tweet.id_str
   });
 
