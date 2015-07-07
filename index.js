@@ -381,9 +381,10 @@ async function reply (client, tweet) {
     ...tweet.entities.user_mentions.map(u => u.screen_name)
   ]);
 
-  // Filter out the users we’ve already bothered in the last 6h and the bot itself.
+  // Filter out the users we’ve already bothered in the last 6h, blacklisted users and the bot itself.
   users = users
     .filter( u => !replyTimes.get(u) || moment( replyTimes.get(u) ).isAfter( moment().subtract(6, 'hours') ) )
+    .filter( u => !blacklist.members.includes(u) )
     .filter( u => u !== botUser.screen_name );
 
   const message = 'A WEEN SOLL DAT BEZUELEN?!?!';
