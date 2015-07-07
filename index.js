@@ -3,7 +3,7 @@ import fs from 'fs';
 import util from 'util';
 
 import uniq from 'lodash.uniq';
-
+import moment from 'moment';
 import Bluebird from 'bluebird';
 import readline from 'readline-sync';
 
@@ -11,12 +11,13 @@ import Twitter from './twitter-plus';
 
 Bluebird.promisifyAll(fs);
 
-let blacklist, whitelist, adminlist, user, userStream, trackStream;
+let blacklist, whitelist, adminlist, botUser;
 
 let active = true;
 
 const replyTimes = new Map();
 
+const tramRE = /(^|\W)(Tram)(\W|$)/i;
 
 (async function main () {
 
@@ -24,7 +25,7 @@ const replyTimes = new Map();
 
   const client = new Twitter(Object.assign({}, config.application, config.client));
 
-  [user] = await client.getAsync('account/verify_credentials');
+  [botUser] = await client.getAsync('account/verify_credentials');
 
   [blacklist, whitelist, adminlist] = await getLists(client);
 
@@ -63,9 +64,9 @@ async function getLists (client) {
   ]);
 
   return [
-    { id: blacklistId, name: 'blacklist', members: blacklist.map(e => e.id_str) },
-    { id: whitelistId, name: 'whitelist', members: whitelist.map(e => e.id_str) },
-    { id: adminlistId, name: 'adminlist', members: adminlist.map(e => e.id_str) },
+    { id: blacklistId, name: 'blacklist', members: blacklist.map(e => e.screen_name) },
+    { id: whitelistId, name: 'whitelist', members: whitelist.map(e => e.screen_name) },
+    { id: adminlistId, name: 'adminlist', members: adminlist.map(e => e.screen_name) },
   ];
 }
 
@@ -111,8 +112,6 @@ function startUserStream (client) {
 
     console.info('User Stream:', 'started');
 
-    userStream = stream;
-
     stream.on('data', function (data) {
 
       if ( data.direct_message ) {
@@ -122,7 +121,7 @@ function startUserStream (client) {
     });
 
     stream.on('error', function (error) {
-      console.error('User Stream', 'error', error.stack);
+      console.error('User Stream', 'error', error.stack, error.source);
     });
 
     stream.on('end', function() {
@@ -142,34 +141,37 @@ function startTrackStream (client) {
 
   client.stream('statuses/filter', {
     stringify_friend_ids: true,
-    locations: [5.73, 49.44, 6.54, 50.19].join(','),
-    follow: whitelist.members.join(',')
+    locations: [
+      ...[5.721, 49.747, 6.274, 50.184],
+      ...[5.798, 49.441, 6.559, 49.886],
+    ].join(','),
+    track: 'tram'
   }, function (stream) {
 
     console.info('Track Stream:', 'started');
 
-    trackStream = stream;
-
-    const tramRE = /(^|\W)(Tram)(\W|$)/i;
-
     stream.on('data', function (data) {
 
+      // look for tweets mentioning the magic word and discard retweets
       if ( data.text && !data.retweeted_status && tramRE.test(data.text) ) {
 
-        if ( data.user && whitelist.members.includes(data.user.id_str) ) {
-          reply(client, data);
-        }
+        // Reply to whitelisted accounts
+        if ( data.user && whitelist.members.includes(data.user.screen_name) ) {
 
-        if ( data.place && data.place.country_code === 'LU' ) {
-          console.log(util.inspect({
+          reply(client, data);
+
+        // Check if tweet is from LU and log it
+        } else if ( data.place && data.place.country_code === 'LU' ) {
+
+          console.info('Location + Tram:', util.inspect({
             created_at: data.created_at,
             text: data.text,
             user: {id_str: data.user.id_str, screen_name: data.user.screen_name, location: data.user.location},
-            geo: data.geo,
             coordinates: data.coordinates,
             place: data.place,
             lang: data.lang,
           }, {depth: null, colors: true}));
+
         }
 
       }
@@ -177,7 +179,7 @@ function startTrackStream (client) {
     });
 
     stream.on('error', function (error) {
-      console.error('Track Stream', 'error', error.stack);
+      console.error('Track Stream', 'error', error.stack, error.source);
     });
 
     stream.on('end', function() {
@@ -193,7 +195,7 @@ function startTrackStream (client) {
 
 function handleDirectMessage (client, data) {
 
-  if ( data.sender.id_str === user.id_str ) {
+  if ( data.sender.id_str === botUser.id_str ) {
     return;
   }
 
@@ -212,7 +214,7 @@ function commands (client, data, sender) {
   let command, args;
 
   if (match) {
-    command = match[1];
+    command = match[1].toString().toLowerCase();
     args = match[2].split(' ').map(a => a.trim()).filter(a => a.length > 0);
   } else {
     command = null;
@@ -223,7 +225,8 @@ function commands (client, data, sender) {
 
   switch (command) {
 
-    case 'WHITELIST':
+    case 'whitelist':
+    case 'wl':
 
       args = args.slice(1);
 
@@ -238,7 +241,8 @@ function commands (client, data, sender) {
       addRemoveToList(client, whitelist, args, sender, sub);
       break;
 
-    case 'BLACKLIST':
+    case 'blacklist':
+    case 'bl':
 
       args = args.slice(1);
 
@@ -253,7 +257,7 @@ function commands (client, data, sender) {
       addRemoveToList(client, blacklist, args, sender, sub);
       break;
 
-    case 'STOP':
+    case 'stop':
       if ( !isAdmin ) {
         denied(client, sender);
         break;
@@ -261,7 +265,7 @@ function commands (client, data, sender) {
       stop(client, sender);
       break;
 
-    case 'START':
+    case 'start':
       if ( !isAdmin ) {
         denied(client, sender);
         break;
@@ -314,10 +318,6 @@ async function addRemoveToList (client, list, args, user, sub) {
     screen_name: args.join(',')
   });
 
-  if ( trackStream ) {
-    trackStream.destroy();
-  }
-
   if ( result && user ) {
 
     let [resultDM] = await client.postAsync('direct_messages/new', {
@@ -364,35 +364,55 @@ async function reply (client, tweet) {
 
   console.info('>>', '@' + tweet.user.screen_name + ':', tweet.text);
 
-  if (!active) {
-    console.info('NOT ACTIVE');
-    return false;
-  }
-
-  if ( blacklist.members.includes(tweet.user.id_str) ) {
+  // Do not reply from users on the blacklist
+  if ( blacklist.members.includes(tweet.user.screen_name) ) {
     console.info('Blacklisted user');
     return false;
   }
 
-  if ( replyTimes.get(tweet.user.id_str) < (new Date() - 6*3600e3) ) {
+  // Do not reply to tweets from users that we’ve bothered in the last 6h
+  if ( replyTimes.get(tweet.user.screen_name) && moment( replyTimes.get(tweet.user.screen_name) ).isAfter( moment().subtract(6, 'hours') ) ) {
     console.info('Can’t annoy a user more than once every 6 hours');
     return false;
   }
 
-  replyTimes.set(tweet.user.id_str, new Date());
-
-  const mentions = uniq([
+  let users = uniq([
     tweet.user.screen_name,
     ...tweet.entities.user_mentions.map(u => u.screen_name)
-  ]).map(u => '@' + u).join(' ');
+  ]);
 
-  const [result] = await client.postAsync('statuses/update', {
-    status: `${mentions} A WEEN SOLL DAT BEZUELEN?!?!`,
-    in_reply_to_status_id: tweet.id_str
-  });
+  // Filter out the users we’ve already bothered in the last 6h and the bot itself.
+  users = users
+    .filter( u => !replyTimes.get(u) || moment( replyTimes.get(u) ).isAfter( moment().subtract(6, 'hours') ) )
+    .filter( u => u !== botUser.screen_name );
 
-  console.info('<<', result.text);
+  const message = 'A WEEN SOLL DAT BEZUELEN?!?!';
 
-  return result;
+  let status;
+  while ( true ) {
+    status = `${ users.map(u => '@' + u).join(' ') } ${message}`;
+    if ( status.length > 140 ) {
+      users.pop();
+    } else {
+      break;
+    }
+  }
+
+  if ( active ) {
+    const [result] = await client.postAsync('statuses/update', {
+      status,
+      in_reply_to_status_id: tweet.id_str
+    });
+
+    console.info('<<', result.text);
+
+    // Set the new reply time for every mentioned user
+    users.forEach( u => replyTimes.set(u, new Date().toISOString() ) );
+
+    return result;
+
+  } else {
+    console.info('NOT ACTIVE', '<<', status);
+  }
 
 }
