@@ -211,6 +211,8 @@ function commands (client, data, sender) {
 
   const match = data.text.match(/^(?:@\w+ )?([A-Z]+)(.*)/);
 
+  console.log(data.text, match);
+
   let command, args;
 
   if (match) {
