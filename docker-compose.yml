@@ -1,0 +1,5 @@
+bot:
+  build: .
+  environment:
+    - NODE_ENV=production
+  restart: always

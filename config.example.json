@@ -1,0 +1,10 @@
+{
+  "application": {
+    "consumer_key": "keysandsecretsherepssssst",
+    "consumer_secret": "keysandsecretsherepssssst"
+  },
+  "client": {
+    "access_token_key": "keysandsecretsherepssssst",
+    "access_token_secret": "keysandsecretsherepssssst"
+  }
+}
